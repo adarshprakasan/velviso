@@ -307,7 +307,7 @@ function calibrate() {
   pen.stroke();
 }
 
-function downloadPhoto(blob, name) {
+function downloadMedia(blob, name) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -318,6 +318,29 @@ function downloadPhoto(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
+function drawComposite(canvas, pen) {
+  pen.setTransform(-1, 0, 0, 1, canvas.width, 0);
+  pen.drawImage(video, 0, 0, canvas.width, canvas.height);
+  pen.drawImage(overlay, 0, 0, canvas.width, canvas.height);
+}
+
+function mediaName(extension) {
+  return 'velviso-' + new Date().toISOString().replace(/[:.]/g, '-') + '.' + extension;
+}
+
+async function saveMedia(file) {
+  const share = { files: [file] };
+  if (navigator.canShare?.(share)) {
+    try {
+      await navigator.share(share);
+      return;
+    } catch (error) {
+      if (error.name === 'AbortError') return;
+    }
+  }
+  downloadMedia(file, file.name);
+}
+
 capture.onclick = async () => {
   if (!media || !face || !reference || video.readyState < 2) return;
   capture.disabled = true;
@@ -326,27 +349,12 @@ capture.onclick = async () => {
     const photo = document.createElement('canvas');
     photo.width = video.videoWidth;
     photo.height = video.videoHeight;
-    const pen = photo.getContext('2d');
-    pen.translate(photo.width, 0);
-    pen.scale(-1, 1);
-    pen.drawImage(video, 0, 0);
     // Read the WebGL drawing buffer in the same task that renders it.
     renderOverlay();
-    pen.drawImage(overlay, 0, 0);
+    drawComposite(photo, photo.getContext('2d'));
     const encoded = photo.toDataURL('image/jpeg', 0.94).split(',')[1];
     const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
-    const name = 'velviso-' + new Date().toISOString().replace(/[:.]/g, '-') + '.jpg';
-    const file = new File([bytes], name, { type: 'image/jpeg' });
-    const share = { files: [file] };
-    if (navigator.canShare?.(share)) {
-      try {
-        await navigator.share(share);
-      } catch (error) {
-        if (error.name !== 'AbortError') downloadPhoto(file, name);
-      }
-    } else {
-      downloadPhoto(file, name);
-    }
+    await saveMedia(new File([bytes], mediaName('jpg'), { type: 'image/jpeg' }));
   } catch {
     get('photo-status').textContent = 'Could not capture the photo. Try again.';
     return;
@@ -365,6 +373,106 @@ function renderOverlay() {
   mesh.draw(face, reference);
 }
 
+const record = get('record');
+const saveVideo = get('save-video');
+const recordStatus = get('record-status');
+const canRecord = typeof MediaRecorder !== 'undefined' &&
+  typeof HTMLCanvasElement.prototype.captureStream === 'function';
+let recording;
+let savedVideo;
+const recordingLimit = 60_000;
+
+function updateRecordButton() {
+  record.disabled = recording
+    ? recording.recorder.state !== 'recording'
+    : !canRecord || !face;
+}
+
+function stopRecording() {
+  if (recording?.recorder.state !== 'recording') return;
+  clearTimeout(recording.timeout);
+  recording.recorder.stop();
+  recordStatus.textContent = 'Preparing video…';
+  updateRecordButton();
+}
+
+function startRecording() {
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const pen = canvas.getContext('2d');
+  const stream = canvas.captureStream(30);
+  try {
+    const mimeType = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm']
+      .find((type) => MediaRecorder.isTypeSupported?.(type));
+    const recorder = new MediaRecorder(stream, {
+      ...(mimeType && { mimeType }),
+      videoBitsPerSecond: 2_500_000,
+    });
+    const chunks = [];
+    const session = { recorder, canvas, pen };
+    let failed = false;
+    recorder.addEventListener('dataavailable', ({ data }) => {
+      if (data.size) chunks.push(data);
+    });
+    recorder.addEventListener('error', () => {
+      failed = true;
+      recordStatus.textContent = 'Video recording failed.';
+    });
+    recorder.addEventListener('stop', () => {
+      clearTimeout(session.timeout);
+      stream.getTracks().forEach((track) => track.stop());
+      recording = undefined;
+      record.textContent = 'Record';
+      updateRecordButton();
+      if (failed || !chunks.length) {
+        recordStatus.textContent = failed ? 'Video recording failed.' : 'No video was captured. Try a longer recording.';
+        return;
+      }
+      const type = (chunks[0].type || recorder.mimeType || 'video/webm').split(';')[0];
+      const extension = type === 'video/mp4' ? 'mp4' : 'webm';
+      savedVideo = new File(chunks, mediaName(extension), { type });
+      saveVideo.hidden = false;
+      recordStatus.textContent = 'Video ready to save.';
+    });
+    recorder.start();
+    recording = session;
+    session.timeout = setTimeout(stopRecording, recordingLimit);
+    record.textContent = 'Stop recording';
+    recordStatus.textContent = 'Recording · up to 60 seconds';
+    renderOverlay();
+    drawComposite(canvas, pen);
+  } catch (error) {
+    stream.getTracks().forEach((track) => track.stop());
+    throw error;
+  }
+}
+
+record.onclick = () => {
+  if (recording) {
+    stopRecording();
+    return;
+  }
+  if (!canRecord || !media || !face || video.readyState < 2) return;
+  try {
+    startRecording();
+  } catch {
+    recordStatus.textContent = 'Could not start recording in this browser.';
+  }
+};
+
+saveVideo.onclick = async () => {
+  if (!savedVideo) return;
+  saveVideo.disabled = true;
+  try {
+    await saveMedia(savedVideo);
+  } catch {
+    recordStatus.textContent = 'Could not save the video. Try again.';
+  } finally {
+    saveVideo.disabled = false;
+  }
+};
+
 function tick(now) {
   try {
     if (video.readyState >= 2 && video.currentTime !== lastTime) {
@@ -377,9 +485,11 @@ function tick(now) {
       if (face && !reference) calibrate();
       align.disabled = !face;
       capture.disabled = !face || capturing;
+      updateRecordButton();
       status.textContent = face ? 'Face tracked' : 'Look toward the camera';
     }
     renderOverlay();
+    if (recording?.recorder.state === 'recording') drawComposite(recording.canvas, recording.pen);
     frame = requestAnimationFrame(tick);
   } catch (error) {
     stop(error.message);
@@ -387,6 +497,7 @@ function tick(now) {
 }
 
 function stop(message = 'Camera off') {
+  stopRecording();
   cancelAnimationFrame(frame);
   media?.getTracks().forEach((track) => track.stop());
   media = undefined;
@@ -396,6 +507,7 @@ function stop(message = 'Camera off') {
   mesh?.draw();
   align.disabled = true;
   capture.disabled = true;
+  updateRecordButton();
   camera.textContent = 'Start camera';
   get('placeholder').hidden = false;
   status.textContent = message;
@@ -435,6 +547,7 @@ camera.onclick = async () => {
     }
     get('placeholder').hidden = true;
     camera.textContent = 'Stop camera';
+    if (!canRecord) recordStatus.textContent = 'Video recording is unavailable in this browser.';
     media.getVideoTracks()[0].addEventListener('ended', () => stop('Camera disconnected'));
     frame = requestAnimationFrame(tick);
   } catch (error) {

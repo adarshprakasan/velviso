@@ -168,6 +168,6 @@ output { color: var(--ivory); font-variant-numeric: tabular-nums; }
 }
 
 .actions { flex-wrap: wrap; }
-#capture:enabled { border-color: var(--sage); }
-#photo-status { color: var(--ivory); font-size: 13px; }
-#photo-status:empty { display: none; }
+#capture:enabled, #record:enabled, #save-video { border-color: var(--sage); }
+.media-status { color: var(--ivory); font-size: 13px; }
+.media-status:empty { display: none; }
