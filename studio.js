@@ -22,6 +22,11 @@ let frame;
 let face;
 let reference;
 let oval;
+let facialFeatures;
+const nosePaths = [
+  [168, 6, 197, 195, 5, 4, 1, 2],
+  [129, 98, 97, 2, 326, 327, 358],
+];
 let textureDirty = true;
 let lastTime = -1;
 let capturing = false;
@@ -305,6 +310,20 @@ function calibrate() {
     pen.lineTo(reference[end].x * size, reference[end].y * size);
   }
   pen.stroke();
+  pen.setLineDash([]);
+  pen.strokeStyle = '#20232070';
+  pen.lineWidth = 1.5;
+  pen.beginPath();
+  for (const { start, end } of facialFeatures) {
+    pen.moveTo(reference[start].x * size, reference[start].y * size);
+    pen.lineTo(reference[end].x * size, reference[end].y * size);
+  }
+  for (const path of nosePaths) {
+    const [first, ...rest] = path.map((index) => reference[index]);
+    pen.moveTo(first.x * size, first.y * size);
+    for (const point of rest) pen.lineTo(point.x * size, point.y * size);
+  }
+  pen.stroke();
 }
 
 function downloadMedia(blob, name) {
@@ -374,18 +393,21 @@ function renderOverlay() {
 }
 
 const record = get('record');
+const microphone = get('microphone');
 const saveVideo = get('save-video');
 const recordStatus = get('record-status');
 const canRecord = typeof MediaRecorder !== 'undefined' &&
   typeof HTMLCanvasElement.prototype.captureStream === 'function';
 let recording;
+let requestingMicrophone = false;
 let savedVideo;
 const recordingLimit = 60_000;
 
 function updateRecordButton() {
   record.disabled = recording
     ? recording.recorder.state !== 'recording'
-    : !canRecord || !face;
+    : !canRecord || !face || requestingMicrophone;
+  microphone.disabled = !canRecord || Boolean(recording) || requestingMicrophone;
 }
 
 function stopRecording() {
@@ -396,14 +418,16 @@ function stopRecording() {
   updateRecordButton();
 }
 
-function startRecording() {
+function startRecording(audioTracks) {
   const canvas = document.createElement('canvas');
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   const pen = canvas.getContext('2d');
   const stream = canvas.captureStream(30);
   try {
-    const mimeType = ['video/mp4', 'video/webm;codecs=vp8', 'video/webm']
+    for (const track of audioTracks) stream.addTrack(track);
+    const webm = audioTracks.length ? 'video/webm;codecs=vp8,opus' : 'video/webm;codecs=vp8';
+    const mimeType = ['video/mp4', webm, 'video/webm']
       .find((type) => MediaRecorder.isTypeSupported?.(type));
     const recorder = new MediaRecorder(stream, {
       ...(mimeType && { mimeType }),
@@ -439,7 +463,10 @@ function startRecording() {
     recording = session;
     session.timeout = setTimeout(stopRecording, recordingLimit);
     record.textContent = 'Stop recording';
-    recordStatus.textContent = 'Recording · up to 60 seconds';
+    updateRecordButton();
+    recordStatus.textContent = audioTracks.length
+      ? 'Recording with microphone · up to 60 seconds'
+      : 'Recording · up to 60 seconds';
     renderOverlay();
     drawComposite(canvas, pen);
   } catch (error) {
@@ -448,18 +475,42 @@ function startRecording() {
   }
 }
 
-record.onclick = () => {
+record.onclick = async () => {
   if (recording) {
     stopRecording();
     return;
   }
-  if (!canRecord || !media || !face || video.readyState < 2) return;
+  if (!canRecord || !media || !face || requestingMicrophone || video.readyState < 2) return;
+
+  const cameraStream = media;
+  let audioTracks = [];
   try {
-    startRecording();
-  } catch {
-    recordStatus.textContent = 'Could not start recording in this browser.';
+    if (microphone.checked) {
+      requestingMicrophone = true;
+      updateRecordButton();
+      recordStatus.textContent = 'Waiting for microphone permission…';
+      const audio = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      audioTracks = audio.getTracks();
+      if (media !== cameraStream) {
+        audioTracks.forEach((track) => track.stop());
+        recordStatus.textContent = '';
+        return;
+      }
+      if (!audio.getAudioTracks().length) throw new Error('No microphone track.');
+    }
+    startRecording(audioTracks);
+  } catch (error) {
+    audioTracks.forEach((track) => track.stop());
+    recordStatus.textContent = error.name === 'NotAllowedError'
+      ? 'Microphone access was denied. Allow it in browser settings or turn the microphone off.'
+      : 'Could not start recording. Check your microphone or try recording without it.';
+  } finally {
+    requestingMicrophone = false;
+    updateRecordButton();
   }
 };
+
+updateRecordButton();
 
 saveVideo.onclick = async () => {
   if (!savedVideo) return;
@@ -537,6 +588,11 @@ camera.onclick = async () => {
       mesh = createMesh(overlay);
       mesh.setTriangles(FaceLandmarker.FACE_LANDMARKS_TESSELATION);
       oval = FaceLandmarker.FACE_LANDMARKS_FACE_OVAL;
+      facialFeatures = [
+        ...FaceLandmarker.FACE_LANDMARKS_LEFT_EYE,
+        ...FaceLandmarker.FACE_LANDMARKS_RIGHT_EYE,
+        ...FaceLandmarker.FACE_LANDMARKS_LIPS,
+      ];
       tracker = await FaceLandmarker.createFromOptions(await FilesetResolver.forVisionTasks(base + '/wasm'), {
         baseOptions: {
           modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',

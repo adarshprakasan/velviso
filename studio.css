@@ -171,3 +171,24 @@ output { color: var(--ivory); font-variant-numeric: tabular-nums; }
 #capture:enabled, #record:enabled, #save-video { border-color: var(--sage); }
 .media-status { color: var(--ivory); font-size: 13px; }
 .media-status:empty { display: none; }
+
+.microphone {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: var(--control);
+  font-size: 13px;
+  cursor: pointer;
+}
+.microphone input { width: 16px; height: 16px; margin: 0; }
+.microphone:has(:disabled) { opacity: .56; cursor: default; }
+
+@media (max-width: 767px) and (orientation: portrait) {
+  main, .tools { grid-template-columns: minmax(0, 1fr); }
+  .stage .heading { min-height: 38px; }
+  .preview { aspect-ratio: 4 / 3; }
+}
