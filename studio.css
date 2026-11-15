@@ -166,3 +166,8 @@ output { color: var(--ivory); font-variant-numeric: tabular-nums; }
   .tools { grid-template-columns: 1fr; gap: 12px; }
   .preview, .surface { border-radius: 11px; }
 }
+
+.actions { flex-wrap: wrap; }
+#capture:enabled { border-color: var(--sage); }
+#photo-status { color: var(--ivory); font-size: 13px; }
+#photo-status:empty { display: none; }

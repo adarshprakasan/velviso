@@ -7,6 +7,7 @@ const overlay = get('overlay');
 const video = document.querySelector('video');
 const context = paint.getContext('2d');
 const camera = get('camera');
+const capture = get('capture');
 const align = get('align');
 const status = get('status');
 const size = paint.width;
@@ -23,6 +24,7 @@ let reference;
 let oval;
 let textureDirty = true;
 let lastTime = -1;
+let capturing = false;
 
 const undo = get('undo');
 const redo = get('redo');
@@ -305,6 +307,64 @@ function calibrate() {
   pen.stroke();
 }
 
+function downloadPhoto(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+capture.onclick = async () => {
+  if (!media || !face || !reference || video.readyState < 2) return;
+  capture.disabled = true;
+  capturing = true;
+  try {
+    const photo = document.createElement('canvas');
+    photo.width = video.videoWidth;
+    photo.height = video.videoHeight;
+    const pen = photo.getContext('2d');
+    pen.translate(photo.width, 0);
+    pen.scale(-1, 1);
+    pen.drawImage(video, 0, 0);
+    // Read the WebGL drawing buffer in the same task that renders it.
+    renderOverlay();
+    pen.drawImage(overlay, 0, 0);
+    const encoded = photo.toDataURL('image/jpeg', 0.94).split(',')[1];
+    const bytes = Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+    const name = 'velviso-' + new Date().toISOString().replace(/[:.]/g, '-') + '.jpg';
+    const file = new File([bytes], name, { type: 'image/jpeg' });
+    const share = { files: [file] };
+    if (navigator.canShare?.(share)) {
+      try {
+        await navigator.share(share);
+      } catch (error) {
+        if (error.name !== 'AbortError') downloadPhoto(file, name);
+      }
+    } else {
+      downloadPhoto(file, name);
+    }
+  } catch {
+    get('photo-status').textContent = 'Could not capture the photo. Try again.';
+    return;
+  } finally {
+    capturing = false;
+    capture.disabled = !face;
+  }
+  get('photo-status').textContent = '';
+};
+
+function renderOverlay() {
+  if (textureDirty) {
+    mesh.upload(paint);
+    textureDirty = false;
+  }
+  mesh.draw(face, reference);
+}
+
 function tick(now) {
   try {
     if (video.readyState >= 2 && video.currentTime !== lastTime) {
@@ -316,13 +376,10 @@ function tick(now) {
       face = tracker.detectForVideo(video, now).faceLandmarks[0];
       if (face && !reference) calibrate();
       align.disabled = !face;
+      capture.disabled = !face || capturing;
       status.textContent = face ? 'Face tracked' : 'Look toward the camera';
     }
-    if (textureDirty) {
-      mesh.upload(paint);
-      textureDirty = false;
-    }
-    mesh.draw(face, reference);
+    renderOverlay();
     frame = requestAnimationFrame(tick);
   } catch (error) {
     stop(error.message);
@@ -338,6 +395,7 @@ function stop(message = 'Camera off') {
   lastTime = -1;
   mesh?.draw();
   align.disabled = true;
+  capture.disabled = true;
   camera.textContent = 'Start camera';
   get('placeholder').hidden = false;
   status.textContent = message;
