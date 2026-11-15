@@ -233,3 +233,16 @@ output { color: var(--ivory); font-variant-numeric: tabular-nums; }
 @media (max-width: 767px) and (orientation: portrait) {
   .brush-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+#canvas-view, #canvas-content { position: absolute; inset: 0; }
+#canvas-content { transform-origin: top left; }
+.canvas-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 9px;
+  color: var(--muted);
+  font-size: 11px;
+}
+#reset-zoom { min-height: 32px; font-size: 11px; }

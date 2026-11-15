@@ -49,8 +49,8 @@ function updateHistoryButtons() {
   redo.disabled = future.length === 0 || Boolean(stroke);
 }
 
-function remember() {
-  past.push(snapshot());
+function remember(before = snapshot()) {
+  past.push(before);
   if (past.length > historyLimit) past.shift();
   future.length = 0;
   updateHistoryButtons();
@@ -228,30 +228,116 @@ function compositeStroke() {
   renderPaint();
 }
 
+const canvasView = get('canvas-view');
+const canvasContent = get('canvas-content');
+const resetZoom = get('reset-zoom');
+const touches = new Map();
+const maxZoom = 8;
+let view = { x: 0, y: 0, scale: 1 };
+let navigating = false;
+let previousGesture;
+
+function setCanvasView(next) {
+  const edge = 1 - next.scale;
+  view = {
+    x: Math.max(edge, Math.min(0, next.x)),
+    y: Math.max(edge, Math.min(0, next.y)),
+    scale: next.scale,
+  };
+  canvasContent.style.transform = `translate(${view.x * 100}%, ${view.y * 100}%) scale(${view.scale})`;
+  resetZoom.textContent = Math.round(view.scale * 100) + '% · Reset';
+  resetZoom.disabled = view.scale === 1;
+}
+
+function touchPoint(event) {
+  const rect = canvasView.getBoundingClientRect();
+  return {
+    x: (event.clientX - rect.left) / rect.width,
+    y: (event.clientY - rect.top) / rect.height,
+  };
+}
+
+function gesturePoints() {
+  const [first, second] = touches.values();
+  return {
+    x: (first.x + second.x) / 2,
+    y: (first.y + second.y) / 2,
+    distance: Math.max(.001, Math.hypot(second.x - first.x, second.y - first.y)),
+  };
+}
+
+function updateGesture() {
+  const next = gesturePoints();
+  const scale = Math.max(1, Math.min(maxZoom, view.scale * next.distance / previousGesture.distance));
+  const ratio = scale / view.scale;
+  setCanvasView({
+    x: next.x - (previousGesture.x - view.x) * ratio,
+    y: next.y - (previousGesture.y - view.y) * ratio,
+    scale,
+  });
+  previousGesture = next;
+}
+
+function endStroke(cancel = false) {
+  if (!stroke) return;
+  const finished = stroke;
+  stroke = undefined;
+  if (cancel) {
+    finished.layer.canvas = finished.base;
+    renderPaint();
+  } else {
+    remember(finished.before);
+  }
+  updateHistoryButtons();
+}
+
+resetZoom.onclick = () => {
+  if (!stroke && !navigating) setCanvasView({ x: 0, y: 0, scale: 1 });
+};
+
 function setDrawingEnabled(enabled) {
   drawingEnabled = enabled;
   paint.setAttribute('aria-disabled', String(!enabled));
   get('canvas-message').hidden = enabled;
-  if (!enabled && stroke) {
-    const { id } = stroke;
-    stroke = undefined;
+  if (enabled) return;
+  const captured = new Set(touches.keys());
+  if (stroke) captured.add(stroke.id);
+  endStroke();
+  touches.clear();
+  navigating = false;
+  previousGesture = undefined;
+  for (const id of captured) {
     if (paint.hasPointerCapture(id)) paint.releasePointerCapture(id);
-    updateHistoryButtons();
   }
 }
 
 paint.addEventListener('pointerdown', (event) => {
+  if (!drawingEnabled || event.button !== 0 || drag) return;
+  if (event.pointerType === 'touch') {
+    if (stroke && !stroke.touch) return;
+    touches.set(event.pointerId, touchPoint(event));
+    paint.setPointerCapture(event.pointerId);
+    if (touches.size >= 2) {
+      navigating = true;
+      if (stroke?.touch) endStroke(true);
+      if (touches.size === 2) previousGesture = gesturePoints();
+    }
+  }
+  if (navigating || stroke || (event.pointerType !== 'touch' && touches.size)) return;
   const layer = layers.find((layer) => layer.id === activeId);
-  if (!drawingEnabled || stroke || drag || event.button !== 0 || !layer.visible) return;
-  remember();
+  if (!layer.visible) return;
+  const before = snapshot();
   const brush = get('brush').querySelector('input:checked').value;
   const preset = presets[brush];
   const width = Number(get('width').value);
   const base = layer.canvas;
   layer.canvas = makeCanvas();
-  paint.setPointerCapture(event.pointerId);
+  if (event.pointerType !== 'touch') paint.setPointerCapture(event.pointerId);
   stroke = {
     id: event.pointerId,
+    touch: event.pointerType === 'touch',
+    before,
+    layer,
     base,
     target: layer.canvas.getContext('2d'),
     mask: makeCanvas().getContext('2d'),
@@ -272,7 +358,12 @@ paint.addEventListener('pointerdown', (event) => {
 });
 
 paint.addEventListener('pointermove', (event) => {
-  if (!drawingEnabled || event.pointerId !== stroke?.id) return;
+  if (!drawingEnabled) return;
+  if (touches.has(event.pointerId)) {
+    touches.set(event.pointerId, touchPoint(event));
+    if (navigating && touches.size >= 2) updateGesture();
+  }
+  if (event.pointerId !== stroke?.id) return;
   const rect = paint.getBoundingClientRect();
   const samples = event.getCoalescedEvents?.();
   for (const sample of samples?.length ? samples : [event]) {
@@ -282,20 +373,24 @@ paint.addEventListener('pointermove', (event) => {
   compositeStroke();
 });
 
-paint.addEventListener('pointerup', (event) => {
+function endPointer(event) {
+  if (touches.delete(event.pointerId)) {
+    if (navigating && touches.size >= 2) previousGesture = gesturePoints();
+    if (!touches.size) {
+      navigating = false;
+      previousGesture = undefined;
+    }
+  }
   if (event.pointerId !== stroke?.id) return;
-  extendStroke(stroke, point(event, paint.getBoundingClientRect(), stroke.last.pressure));
-  compositeStroke();
-  stroke = undefined;
-  updateHistoryButtons();
-});
+  if (event.type === 'pointerup') {
+    extendStroke(stroke, point(event, paint.getBoundingClientRect(), stroke.last.pressure));
+    compositeStroke();
+  }
+  endStroke();
+}
 
-for (const eventName of ['pointercancel', 'lostpointercapture']) {
-  paint.addEventListener(eventName, (event) => {
-    if (event.pointerId !== stroke?.id) return;
-    stroke = undefined;
-    updateHistoryButtons();
-  });
+for (const name of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  paint.addEventListener(name, endPointer);
 }
 
 function calibrate() {

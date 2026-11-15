@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Velviso</title>
-<link rel="stylesheet" href="studio.css?v=smooth1">
+<link rel="stylesheet" href="studio.css?v=zoom1">
 </head>
 <body>
 <div class="shell">
@@ -16,7 +16,8 @@
 <div class="preview"><video playsinline muted aria-label="Live camera"></video><canvas id="overlay"></canvas><p id="placeholder">Start the camera to preview your paint.</p></div>
 </section>
 <section class="glass panel stage"><div class="heading"><h2>Paint canvas</h2><button id="align" disabled>Realign face</button></div>
-<div class="surface"><canvas id="paint" width="768" height="768" aria-label="Drawing canvas" aria-disabled="true"></canvas><canvas id="guide" width="768" height="768" aria-hidden="true"></canvas><p id="canvas-message">Start the camera to draw.</p></div>
+<div class="surface"><div id="canvas-view"><div id="canvas-content"><canvas id="paint" width="768" height="768" aria-label="Drawing canvas" aria-disabled="true"></canvas><canvas id="guide" width="768" height="768" aria-hidden="true"></canvas></div></div><p id="canvas-message">Start the camera to draw.</p></div>
+<div class="canvas-footer"><span>Pinch to zoom · Two fingers to pan</span><button id="reset-zoom" disabled>100% · Reset</button></div>
 </section>
 <aside class="tools" aria-label="Painting tools"><div class="glass panel">
 <div class="heading"><h2>Brush settings</h2></div>
@@ -44,6 +45,6 @@
 </div></aside>
 </main>
 </div>
-<script type="module" src="studio.js?v=smooth1"></script>
+<script type="module" src="studio.js?v=zoom1"></script>
 </body>
 </html>
