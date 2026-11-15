@@ -1,4 +1,4 @@
-# Facepaint Studio
+# Velviso
 
 A browser-based face painting prototype. Draw with a mouse, pen, or touch and see the paint follow a single face in the mirrored live preview.
 
