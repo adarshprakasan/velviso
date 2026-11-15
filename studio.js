@@ -1,3 +1,4 @@
+import { extendStroke, makeBrushTip, presets, stamp } from './brushes.js';
 import { createMesh } from './mesh.js';
 
 const get = (id) => document.getElementById(id);
@@ -206,32 +207,24 @@ function addLayer() {
   renderLayers();
 }
 
-function point(event) {
-  const rect = paint.getBoundingClientRect();
+function point(event, rect, fallbackPressure = 1) {
   return {
     x: (event.clientX - rect.left) * size / rect.width,
     y: (event.clientY - rect.top) * size / rect.height,
+    pressure: event.pointerType === 'pen' ? event.pressure || fallbackPressure : 1,
   };
 }
 
-function dab({ x, y }) {
-  const { target, radius, brush, color, alpha } = stroke;
-  target.globalCompositeOperation = brush === 'Eraser' ? 'destination-out' : 'source-over';
-  target.globalAlpha = alpha;
-  target.fillStyle = color;
-  if (brush === 'Airbrush') {
-    const gradient = target.createRadialGradient(x, y, 0, x, y, radius);
-    gradient.addColorStop(0, color);
-    gradient.addColorStop(1, color + '00');
-    target.fillStyle = gradient;
-  }
-  if (brush === 'Marker') {
-    target.fillRect(x - radius, y - radius / 2, radius * 2, radius);
-  } else {
-    target.beginPath();
-    target.arc(x, y, radius, 0, 2 * Math.PI);
-    target.fill();
-  }
+function compositeStroke() {
+  const { target, base, mask, opacity, erase } = stroke;
+  target.clearRect(0, 0, size, size);
+  target.drawImage(base, 0, 0);
+  target.globalAlpha = opacity;
+  target.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
+  target.drawImage(mask.canvas, 0, 0);
+  target.globalAlpha = 1;
+  target.globalCompositeOperation = 'source-over';
+  renderPaint();
 }
 
 function setDrawingEnabled(enabled) {
@@ -247,54 +240,58 @@ function setDrawingEnabled(enabled) {
 }
 
 paint.addEventListener('pointerdown', (event) => {
-  const activeLayer = layers.find((layer) => layer.id === activeId);
-  if (!drawingEnabled || stroke || drag || event.button !== 0 || !activeLayer.visible) return;
+  const layer = layers.find((layer) => layer.id === activeId);
+  if (!drawingEnabled || stroke || drag || event.button !== 0 || !layer.visible) return;
   remember();
-  const canvas = makeCanvas();
-  const target = canvas.getContext('2d');
-  target.drawImage(activeLayer.canvas, 0, 0);
-  activeLayer.canvas = canvas;
+  const brush = get('brush').value;
+  const preset = presets[brush];
+  const width = Number(get('width').value);
+  const base = layer.canvas;
+  layer.canvas = makeCanvas();
   paint.setPointerCapture(event.pointerId);
   stroke = {
     id: event.pointerId,
-    target,
-    radius: Number(get('width').value) / 2,
-    brush: get('brush').value,
-    color: get('color').value,
-    alpha: Number(get('opacity').value) / 100,
-    spacing: 0,
-    last: point(event),
+    base,
+    target: layer.canvas.getContext('2d'),
+    mask: makeCanvas().getContext('2d'),
+    tip: makeBrushTip(brush, get('color').value),
+    preset,
+    width,
+    flow: Number(get('flow').value) / 100,
+    opacity: Number(get('opacity').value) / 100,
+    erase: brush === 'eraser',
+    spacing: Math.max(.45, width * preset.spacing),
+    last: point(event, paint.getBoundingClientRect(), .35),
     remainder: 0,
   };
-  stroke.spacing = Math.max(0.5, stroke.radius * (1.05 - Number(get('flow').value) / 100));
   updateHistoryButtons();
-  dab(stroke.last);
-  renderPaint();
+  stamp(stroke, stroke.last);
+  compositeStroke();
 });
 
 paint.addEventListener('pointermove', (event) => {
   if (!drawingEnabled || event.pointerId !== stroke?.id) return;
-  const next = point(event);
-  const dx = next.x - stroke.last.x;
-  const dy = next.y - stroke.last.y;
-  const distance = Math.hypot(dx, dy);
-  for (let offset = stroke.spacing - stroke.remainder; offset <= distance; offset += stroke.spacing) {
-    dab({
-      x: stroke.last.x + dx * offset / distance,
-      y: stroke.last.y + dy * offset / distance,
-    });
+  const rect = paint.getBoundingClientRect();
+  const samples = event.getCoalescedEvents?.();
+  for (const sample of samples?.length ? samples : [event]) {
+    extendStroke(stroke, point(sample, rect, stroke.last.pressure));
   }
-  stroke.remainder = (stroke.remainder + distance) % stroke.spacing;
-  stroke.last = next;
-  renderPaint();
+  compositeStroke();
 });
 
-for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+paint.addEventListener('pointerup', (event) => {
+  if (event.pointerId !== stroke?.id) return;
+  extendStroke(stroke, point(event, paint.getBoundingClientRect(), stroke.last.pressure));
+  compositeStroke();
+  stroke = undefined;
+  updateHistoryButtons();
+});
+
+for (const eventName of ['pointercancel', 'lostpointercapture']) {
   paint.addEventListener(eventName, (event) => {
-    if (event.pointerId === stroke?.id) {
-      stroke = undefined;
-      updateHistoryButtons();
-    }
+    if (event.pointerId !== stroke?.id) return;
+    stroke = undefined;
+    updateHistoryButtons();
   });
 }
 
@@ -647,4 +644,12 @@ for (const id of ['width', 'flow', 'opacity']) {
   input.addEventListener('input', update);
   update();
 }
+get('brush').addEventListener('change', (event) => {
+  const preset = presets[event.target.value];
+  for (const id of ['width', 'flow']) {
+    const control = get(id);
+    control.value = preset[id];
+    control.dispatchEvent(new Event('input'));
+  }
+});
 addLayer();
