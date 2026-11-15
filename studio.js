@@ -11,7 +11,7 @@ const align = get('align');
 const status = get('status');
 const size = paint.width;
 const layers = [];
-let activeLayer;
+let activeId;
 let layerNumber = 0;
 let stroke;
 let mesh;
@@ -24,54 +24,177 @@ let oval;
 let textureDirty = true;
 let lastTime = -1;
 
+const undo = get('undo');
+const redo = get('redo');
+const past = [];
+const future = [];
+const historyLimit = 24;
+let drag;
+
+function snapshot() {
+  return { layers: layers.map((layer) => ({ ...layer })), activeId };
+}
+
+function updateHistoryButtons() {
+  undo.disabled = past.length === 0 || Boolean(stroke);
+  redo.disabled = future.length === 0 || Boolean(stroke);
+}
+
+function remember() {
+  past.push(snapshot());
+  if (past.length > historyLimit) past.shift();
+  future.length = 0;
+  updateHistoryButtons();
+}
+
+function restore(from, to) {
+  if (stroke || drag || !from.length) return;
+  to.push(snapshot());
+  const saved = from.pop();
+  layers.splice(0, layers.length, ...saved.layers);
+  activeId = saved.activeId;
+  renderLayers();
+  renderPaint();
+  updateHistoryButtons();
+}
+
 function renderPaint() {
   context.clearRect(0, 0, size, size);
   for (const layer of layers) {
-    if (layer.visible) context.drawImage(layer.canvas, 0, 0);
+    if (!layer.visible) continue;
+    context.globalAlpha = layer.opacity;
+    context.drawImage(layer.canvas, 0, 0);
   }
+  context.globalAlpha = 1;
   textureDirty = true;
+}
+
+function makeButton(text, label, action) {
+  const button = document.createElement('button');
+  button.textContent = text;
+  button.setAttribute('aria-label', label);
+  button.onclick = () => {
+    if (!stroke && !drag) action?.();
+  };
+  return button;
+}
+
+function moveLayer(id, targetId) {
+  const from = layers.findIndex((layer) => layer.id === id);
+  const to = layers.findIndex((layer) => layer.id === targetId);
+  if (from < 0 || to < 0 || from === to || stroke) return;
+  remember();
+  layers.splice(to, 0, ...layers.splice(from, 1));
+  renderLayers();
+  renderPaint();
+  get('layers').querySelector('[data-layer="' + id + '"] .handle')?.focus({ preventScroll: true });
+}
+
+function attachDrag(handle, row, layer) {
+  handle.onpointerdown = (event) => {
+    if (event.button !== 0 || drag || stroke) return;
+    handle.setPointerCapture(event.pointerId);
+    drag = { pointerId: event.pointerId, target: row };
+    row.classList.add('dragging');
+  };
+  handle.onpointermove = (event) => {
+    if (drag?.pointerId !== event.pointerId) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-layer]');
+    drag.target?.classList.remove('drop-target');
+    drag.target = target;
+    if (target !== row) target?.classList.add('drop-target');
+  };
+  const end = (event) => {
+    if (drag?.pointerId !== event.pointerId) return;
+    const target = drag.target;
+    drag = undefined;
+    target?.classList.remove('drop-target');
+    row.classList.remove('dragging');
+    if (event.type === 'pointerup') moveLayer(layer.id, Number(target?.dataset.layer));
+  };
+  handle.onpointerup = end;
+  handle.onpointercancel = end;
+  handle.onlostpointercapture = end;
+  handle.onkeydown = (event) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    const index = layers.indexOf(layer);
+    const neighbor = layers[index + (event.key === 'ArrowUp' ? 1 : -1)];
+    if (neighbor) moveLayer(layer.id, neighbor.id);
+  };
 }
 
 function renderLayers() {
   get('layers').replaceChildren(...layers.slice().reverse().map((layer) => {
     const row = document.createElement('div');
     row.className = 'layer';
-    const select = document.createElement('button');
-    select.textContent = layer.name;
-    select.setAttribute('aria-pressed', layer === activeLayer);
-    select.onclick = () => {
-      activeLayer = layer;
-      renderLayers();
-    };
-    const visibility = document.createElement('button');
-    visibility.textContent = layer.visible ? 'Hide' : 'Show';
-    visibility.setAttribute('aria-label', visibility.textContent + ' ' + layer.name);
-    visibility.onclick = () => {
-      layer.visible = !layer.visible;
-      renderLayers();
-      renderPaint();
-    };
-    const remove = document.createElement('button');
-    remove.textContent = 'Delete';
-    remove.setAttribute('aria-label', 'Delete ' + layer.name);
-    remove.disabled = layers.length === 1;
-    remove.onclick = () => {
+    row.dataset.layer = layer.id;
+    const handle = makeButton('⠿', 'Reorder ' + layer.name + ' with arrow keys or drag');
+    handle.className = 'handle';
+    attachDrag(handle, row, layer);
+    const select = makeButton(layer.name, 'Select ' + layer.name, () => {
+      activeId = layer.id;
+      for (const choice of get('layers').querySelectorAll('.layer-select')) {
+        choice.setAttribute('aria-pressed', choice === select);
+      }
+    });
+    select.className = 'layer-select';
+    select.setAttribute('aria-pressed', layer.id === activeId);
+    const visibility = makeButton(layer.visible ? 'Hide' : 'Show',
+      (layer.visible ? 'Hide ' : 'Show ') + layer.name, () => {
+        remember();
+        layer.visible = !layer.visible;
+        renderLayers();
+        renderPaint();
+      });
+    const remove = makeButton('×', 'Delete ' + layer.name, () => {
+      remember();
       const index = layers.indexOf(layer);
       layers.splice(index, 1);
-      if (layer === activeLayer) activeLayer = layers[Math.max(0, index - 1)];
+      if (layer.id === activeId) activeId = layers[Math.max(0, index - 1)].id;
       renderLayers();
       renderPaint();
+    });
+    remove.disabled = layers.length === 1;
+    const opacity = document.createElement('label');
+    opacity.className = 'layer-opacity';
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = 0;
+    slider.max = 100;
+    slider.value = Math.round(layer.opacity * 100);
+    slider.setAttribute('aria-label', layer.name + ' opacity');
+    const value = document.createElement('output');
+    value.value = slider.value + '%';
+    let adjusting = false;
+    slider.oninput = () => {
+      if (stroke || drag) {
+        slider.value = Math.round(layer.opacity * 100);
+        return;
+      }
+      if (!adjusting) remember();
+      adjusting = true;
+      layer.opacity = Number(slider.value) / 100;
+      value.value = slider.value + '%';
+      renderPaint();
     };
-    row.append(select, visibility, remove);
+    slider.onchange = () => { adjusting = false; };
+    opacity.append('Opacity', slider, value);
+    row.append(handle, select, visibility, remove, opacity);
     return row;
   }));
 }
 
-function addLayer() {
+function makeCanvas() {
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
-  activeLayer = { name: 'Layer ' + ++layerNumber, canvas, visible: true };
-  layers.push(activeLayer);
+  return canvas;
+}
+
+function addLayer() {
+  const id = ++layerNumber;
+  layers.push({ id, name: 'Layer ' + id, canvas: makeCanvas(), visible: true, opacity: 1 });
+  activeId = id;
   renderLayers();
 }
 
@@ -104,11 +227,17 @@ function dab({ x, y }) {
 }
 
 paint.addEventListener('pointerdown', (event) => {
-  if (stroke || event.button !== 0 || !activeLayer.visible) return;
+  const activeLayer = layers.find((layer) => layer.id === activeId);
+  if (stroke || drag || event.button !== 0 || !activeLayer.visible) return;
+  remember();
+  const canvas = makeCanvas();
+  const target = canvas.getContext('2d');
+  target.drawImage(activeLayer.canvas, 0, 0);
+  activeLayer.canvas = canvas;
   paint.setPointerCapture(event.pointerId);
   stroke = {
     id: event.pointerId,
-    target: activeLayer.canvas.getContext('2d'),
+    target,
     radius: Number(get('width').value) / 2,
     brush: get('brush').value,
     color: get('color').value,
@@ -118,6 +247,7 @@ paint.addEventListener('pointerdown', (event) => {
     remainder: 0,
   };
   stroke.spacing = Math.max(0.5, stroke.radius * (1.05 - Number(get('flow').value) / 100));
+  updateHistoryButtons();
   dab(stroke.last);
   renderPaint();
 });
@@ -141,7 +271,10 @@ paint.addEventListener('pointermove', (event) => {
 
 for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) {
   paint.addEventListener(eventName, (event) => {
-    if (event.pointerId === stroke?.id) stroke = undefined;
+    if (event.pointerId === stroke?.id) {
+      stroke = undefined;
+      updateHistoryButtons();
+    }
   });
 }
 
@@ -254,7 +387,13 @@ camera.onclick = async () => {
 };
 
 align.onclick = calibrate;
-get('add').onclick = addLayer;
+get('add').onclick = () => {
+  if (stroke || drag) return;
+  remember();
+  addLayer();
+};
+undo.onclick = () => restore(past, future);
+redo.onclick = () => restore(future, past);
 for (const id of ['width', 'flow', 'opacity']) {
   const input = get(id);
   const update = () => {
