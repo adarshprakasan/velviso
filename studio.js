@@ -129,7 +129,7 @@ function renderLayers() {
     const row = document.createElement('div');
     row.className = 'layer';
     row.dataset.layer = layer.id;
-    const handle = makeButton('⠿', 'Reorder ' + layer.name + ' with arrow keys or drag');
+    const handle = makeButton('Drag', 'Reorder ' + layer.name + ' with arrow keys or drag');
     handle.className = 'handle';
     attachDrag(handle, row, layer);
     const select = makeButton(layer.name, 'Select ' + layer.name, () => {
@@ -179,7 +179,7 @@ function renderLayers() {
       renderPaint();
     };
     slider.onchange = () => { adjusting = false; };
-    opacity.append('Opacity', slider, value);
+    opacity.append('Layer opacity', value, slider);
     row.append(handle, select, visibility, remove, opacity);
     return row;
   }));

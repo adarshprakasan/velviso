@@ -4,31 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Velviso</title>
-<link rel="stylesheet" href="studio.css">
+<link rel="stylesheet" href="studio.css?v=glass1">
 </head>
 <body>
-<header><h1><em>Velviso</em></h1><div class="history"><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="camera">Start camera</button></div></header>
+<div class="shell">
+<header class="glass topbar"><h1>Velviso</h1><div class="actions"><button id="undo" disabled>Undo</button><button id="redo" disabled>Redo</button><button id="camera">Start camera</button></div></header>
 <main>
-<section><div class="heading"><h2>Live preview</h2><span id="status" role="status">Camera off</span></div>
+<section class="glass panel stage"><div class="heading"><h2>Live preview</h2><span id="status" role="status">Camera off</span></div>
 <div class="preview"><video playsinline muted aria-label="Live camera"></video><canvas id="overlay"></canvas><p id="placeholder">Start the camera to preview your paint.</p></div>
 </section>
-<section><div class="heading"><h2>Paint canvas</h2><button id="align" disabled>Realign face</button></div>
+<section class="glass panel stage"><div class="heading"><h2>Paint canvas</h2><button id="align" disabled>Realign face</button></div>
 <div class="surface"><canvas id="paint" width="768" height="768" aria-label="Drawing canvas"></canvas><canvas id="guide" width="768" height="768" aria-hidden="true"></canvas></div>
 </section>
-<aside class="tools" aria-label="Painting tools"><div>
+<aside class="tools" aria-label="Painting tools"><div class="glass panel">
 <div class="heading"><h2>Brush settings</h2></div>
 <div class="controls">
 <label>Brush<select id="brush"><option>Round</option><option>Airbrush</option><option>Marker</option><option>Eraser</option></select></label>
 <label>Color<input id="color" type="color" value="#ed397a"></label>
 <label>Width <output for="width"></output><input id="width" type="range" min="2" max="160" value="30"></label>
 <label>Flow <output for="flow"></output><input id="flow" type="range" min="1" max="100" value="55"></label>
-<label>Opacity <output for="opacity"></output><input id="opacity" type="range" min="1" max="100" value="100"></label>
+<label>Brush opacity <output for="opacity"></output><input id="opacity" type="range" min="1" max="100" value="100"></label>
 </div>
-</div><div>
+</div><div class="glass panel">
 <div class="heading"><h2>Layers</h2><button id="add">Add layer</button></div>
 <div id="layers" aria-label="Paint layers"></div>
 </div></aside>
 </main>
-<script type="module" src="studio.js"></script>
+</div>
+<script type="module" src="studio.js?v=glass1"></script>
 </body>
 </html>
