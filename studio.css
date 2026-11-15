@@ -192,3 +192,21 @@ output { color: var(--ivory); font-variant-numeric: tabular-nums; }
   .stage .heading { min-height: 38px; }
   .preview { aspect-ratio: 4 / 3; }
 }
+
+#paint[aria-disabled="true"] { touch-action: auto; cursor: default; }
+#canvas-message {
+  position: absolute;
+  left: 50%;
+  bottom: 9px;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 18px);
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 9px;
+  background: var(--charcoal);
+  color: var(--ivory);
+  font-size: 12px;
+  text-align: center;
+  pointer-events: none;
+}

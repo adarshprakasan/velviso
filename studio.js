@@ -15,6 +15,7 @@ const layers = [];
 let activeId;
 let layerNumber = 0;
 let stroke;
+let drawingEnabled = false;
 let mesh;
 let tracker;
 let media;
@@ -233,9 +234,21 @@ function dab({ x, y }) {
   }
 }
 
+function setDrawingEnabled(enabled) {
+  drawingEnabled = enabled;
+  paint.setAttribute('aria-disabled', String(!enabled));
+  get('canvas-message').hidden = enabled;
+  if (!enabled && stroke) {
+    const { id } = stroke;
+    stroke = undefined;
+    if (paint.hasPointerCapture(id)) paint.releasePointerCapture(id);
+    updateHistoryButtons();
+  }
+}
+
 paint.addEventListener('pointerdown', (event) => {
   const activeLayer = layers.find((layer) => layer.id === activeId);
-  if (stroke || drag || event.button !== 0 || !activeLayer.visible) return;
+  if (!drawingEnabled || stroke || drag || event.button !== 0 || !activeLayer.visible) return;
   remember();
   const canvas = makeCanvas();
   const target = canvas.getContext('2d');
@@ -260,7 +273,7 @@ paint.addEventListener('pointerdown', (event) => {
 });
 
 paint.addEventListener('pointermove', (event) => {
-  if (event.pointerId !== stroke?.id) return;
+  if (!drawingEnabled || event.pointerId !== stroke?.id) return;
   const next = point(event);
   const dx = next.x - stroke.last.x;
   const dy = next.y - stroke.last.y;
@@ -548,6 +561,7 @@ function tick(now) {
 }
 
 function stop(message = 'Camera off') {
+  setDrawingEnabled(false);
   stopRecording();
   cancelAnimationFrame(frame);
   media?.getTracks().forEach((track) => track.stop());
@@ -604,7 +618,10 @@ camera.onclick = async () => {
     get('placeholder').hidden = true;
     camera.textContent = 'Stop camera';
     if (!canRecord) recordStatus.textContent = 'Video recording is unavailable in this browser.';
-    media.getVideoTracks()[0].addEventListener('ended', () => stop('Camera disconnected'));
+    const track = media.getVideoTracks()[0];
+    if (track.readyState !== 'live') throw new Error('Camera disconnected');
+    track.addEventListener('ended', () => stop('Camera disconnected'));
+    setDrawingEnabled(true);
     frame = requestAnimationFrame(tick);
   } catch (error) {
     stop(error.message || 'Could not start the camera.');
