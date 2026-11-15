@@ -1,4 +1,4 @@
-import { extendStroke, makeBrushTip, presets, stamp } from './brushes.js';
+import { drawBrushPreview, extendStroke, makeBrushTip, presets, smoothPoint, stamp } from './brushes.js?v=smooth1';
 import { createMesh } from './mesh.js';
 
 const get = (id) => document.getElementById(id);
@@ -211,6 +211,7 @@ function point(event, rect, fallbackPressure = 1) {
   return {
     x: (event.clientX - rect.left) * size / rect.width,
     y: (event.clientY - rect.top) * size / rect.height,
+    time: event.timeStamp,
     pressure: event.pointerType === 'pen' ? event.pressure || fallbackPressure : 1,
   };
 }
@@ -243,7 +244,7 @@ paint.addEventListener('pointerdown', (event) => {
   const layer = layers.find((layer) => layer.id === activeId);
   if (!drawingEnabled || stroke || drag || event.button !== 0 || !layer.visible) return;
   remember();
-  const brush = get('brush').value;
+  const brush = get('brush').querySelector('input:checked').value;
   const preset = presets[brush];
   const width = Number(get('width').value);
   const base = layer.canvas;
@@ -259,6 +260,7 @@ paint.addEventListener('pointerdown', (event) => {
     width,
     flow: Number(get('flow').value) / 100,
     opacity: Number(get('opacity').value) / 100,
+    smoothing: Number(get('smoothing').value) / 100,
     erase: brush === 'eraser',
     spacing: Math.max(.45, width * preset.spacing),
     last: point(event, paint.getBoundingClientRect(), .35),
@@ -274,7 +276,8 @@ paint.addEventListener('pointermove', (event) => {
   const rect = paint.getBoundingClientRect();
   const samples = event.getCoalescedEvents?.();
   for (const sample of samples?.length ? samples : [event]) {
-    extendStroke(stroke, point(sample, rect, stroke.last.pressure));
+    const next = point(sample, rect, stroke.last.pressure);
+    extendStroke(stroke, smoothPoint(stroke.last, next, stroke.smoothing));
   }
   compositeStroke();
 });
@@ -635,7 +638,7 @@ get('add').onclick = () => {
 };
 undo.onclick = () => restore(past, future);
 redo.onclick = () => restore(future, past);
-for (const id of ['width', 'flow', 'opacity']) {
+for (const id of ['width', 'flow', 'opacity', 'smoothing']) {
   const input = get(id);
   const update = () => {
     document.querySelector('output[for="' + id + '"]').value =
@@ -652,4 +655,7 @@ get('brush').addEventListener('change', (event) => {
     control.dispatchEvent(new Event('input'));
   }
 });
+for (const choice of get('brush').querySelectorAll('input')) {
+  drawBrushPreview(choice.nextElementSibling, choice.value, '#efece0');
+}
 addLayer();

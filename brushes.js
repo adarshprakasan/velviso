@@ -74,3 +74,47 @@ export function extendStroke(stroke, next) {
   stroke.remainder = (stroke.remainder + distance) % stroke.spacing;
   stroke.last = next;
 }
+
+export function smoothPoint(previous, next, amount) {
+  if (!amount) return next;
+  const elapsed = Math.max(1, next.time - previous.time);
+  const distance = Math.hypot(next.x - previous.x, next.y - previous.y);
+  const response = 1 - Math.exp(-elapsed / (8 + amount * 48));
+  const follow = Math.max(response, 1 - 36 / Math.max(1, distance), 1 - amount);
+  return {
+    x: previous.x + (next.x - previous.x) * follow,
+    y: previous.y + (next.y - previous.y) * follow,
+    pressure: next.pressure,
+    time: next.time,
+  };
+}
+
+export function drawBrushPreview(canvas, brush, color) {
+  const mask = canvas.getContext('2d');
+  const preset = presets[brush];
+  const width = Math.max(8, Math.min(39, preset.width * .54));
+  if (brush === 'eraser') {
+    mask.fillStyle = color;
+    mask.globalAlpha = .65;
+    mask.fillRect(13, 15, 110, 23);
+    mask.globalAlpha = 1;
+    mask.globalCompositeOperation = 'destination-out';
+  }
+  const stroke = {
+    mask, tip: makeBrushTip(brush, color), width,
+    flow: preset.flow / 100, preset, spacing: Math.max(.5, width * preset.spacing),
+    last: { x: 17, y: 30, pressure: .6 },
+    remainder: 0,
+  };
+  stamp(stroke, stroke.last);
+  for (let i = 1; i <= 30; i++) {
+    const progress = i / 30;
+    extendStroke(stroke, {
+      x: 17 + progress * 103,
+      y: 26 + Math.cos(progress * Math.PI * 2) * 8,
+      pressure: .57 + Math.sin(progress * Math.PI) * .43,
+    });
+  }
+  mask.globalCompositeOperation = 'source-over';
+  mask.globalAlpha = 1;
+}

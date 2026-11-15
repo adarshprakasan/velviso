@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Velviso</title>
-<link rel="stylesheet" href="studio.css?v=brush1">
+<link rel="stylesheet" href="studio.css?v=smooth1">
 </head>
 <body>
 <div class="shell">
@@ -20,12 +20,23 @@
 </section>
 <aside class="tools" aria-label="Painting tools"><div class="glass panel">
 <div class="heading"><h2>Brush settings</h2></div>
+<fieldset id="brush" class="brush-picker">
+<legend>Brush</legend>
+<div class="brush-grid">
+<label class="brush-card"><input type="radio" name="brush" value="ink" checked><canvas width="136" height="54" aria-hidden="true"></canvas><span>Studio Ink</span></label>
+<label class="brush-card"><input type="radio" name="brush" value="soft"><canvas width="136" height="54" aria-hidden="true"></canvas><span>Soft Blend</span></label>
+<label class="brush-card"><input type="radio" name="brush" value="airbrush"><canvas width="136" height="54" aria-hidden="true"></canvas><span>Airbrush</span></label>
+<label class="brush-card"><input type="radio" name="brush" value="pencil"><canvas width="136" height="54" aria-hidden="true"></canvas><span>Graphite</span></label>
+<label class="brush-card"><input type="radio" name="brush" value="marker"><canvas width="136" height="54" aria-hidden="true"></canvas><span>Chisel Marker</span></label>
+<label class="brush-card"><input type="radio" name="brush" value="eraser"><canvas width="136" height="54" aria-hidden="true"></canvas><span>Eraser</span></label>
+</div>
+</fieldset>
 <div class="controls">
-<label>Brush<select id="brush"><option value="ink">Studio Ink</option><option value="soft">Soft Blend</option><option value="airbrush">Airbrush</option><option value="pencil">Graphite</option><option value="marker">Chisel Marker</option><option value="eraser">Eraser</option></select></label>
 <label>Color<input id="color" type="color" value="#a9bba4"></label>
 <label>Width <output for="width"></output><input id="width" type="range" min="1" max="240" value="14"></label>
 <label>Flow <output for="flow"></output><input id="flow" type="range" min="1" max="100" value="100"></label>
 <label>Brush opacity <output for="opacity"></output><input id="opacity" type="range" min="1" max="100" value="100"></label>
+<label>Smoothing <output for="smoothing"></output><input id="smoothing" type="range" min="0" max="100" value="35"></label>
 </div>
 </div><div class="glass panel">
 <div class="heading"><h2>Layers</h2><button id="add">Add layer</button></div>
@@ -33,6 +44,6 @@
 </div></aside>
 </main>
 </div>
-<script type="module" src="studio.js?v=brush1"></script>
+<script type="module" src="studio.js?v=smooth1"></script>
 </body>
 </html>
