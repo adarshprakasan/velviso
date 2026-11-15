@@ -295,7 +295,7 @@ function calibrate() {
   const pen = guide.getContext('2d');
   pen.clearRect(0, 0, size, size);
   pen.setLineDash([7, 7]);
-  pen.strokeStyle = '#684d60a0';
+  pen.strokeStyle = '#202320a0';
   pen.lineWidth = 2;
   pen.beginPath();
   for (const { start, end } of oval) {

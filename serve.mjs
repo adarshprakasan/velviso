@@ -5,6 +5,7 @@ const files = {
   '/': ['index.html', 'text/html'],
   '/studio.css': ['studio.css', 'text/css'],
   '/studio.js': ['studio.js', 'text/javascript'],
+  '/grain.png': ['grain.png', 'image/png'],
   '/mesh.js': ['mesh.js', 'text/javascript'],
 };
 
